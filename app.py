@@ -14,7 +14,7 @@ st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 # 🔍 Fungsi bantu regex aman
 # =========================
 def extract_safe(text, pattern, group=1, default=""):
-    """Ekstraksi teks dengan regex aman"""
+    """Ekstraksi teks menggunakan regex dengan fallback"""
     match = re.search(pattern, text, re.IGNORECASE)
     return match.group(group).strip() if match else default
 
@@ -22,7 +22,7 @@ def extract_safe(text, pattern, group=1, default=""):
 # 💡 Ekstraksi DPP, Tarif, dan PPh
 # =========================
 def smart_extract_dpp_tarif_pph(text):
-    """Membaca nilai DPP, tarif %, dan pajak penghasilan"""
+    """Ekstrak nilai DPP, tarif (%), dan PPh"""
     for line in text.splitlines():
         if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
             numbers = re.findall(r"\d[\d.,]*", line)
@@ -37,20 +37,37 @@ def smart_extract_dpp_tarif_pph(text):
     return 0, 0, 0
 
 # =========================
-# 🔎 Ekstraksi OBJEK PAJAK panjang
+# 🔎 Ekstraksi OBJEK PAJAK multi-baris (final fix)
 # =========================
 def extract_objek_pajak(text):
     """
-    Menangkap seluruh kalimat objek pajak multi-baris,
-    berhenti sebelum nilai angka (DPP).
+    Menangkap seluruh teks objek pajak setelah kode objek (B.3)
+    sampai sebelum muncul angka besar (DPP) atau kata kunci dokumen.
     """
-    pattern = r"\d{2}-\d{3}-\d{2}\s+([A-Za-z0-9/()., -]+(?:\n[A-Za-z0-9/()., -]+)*)"
-    match = re.search(pattern, text)
-    if match:
-        obj = match.group(1)
-        obj = re.sub(r"\s*\n\s*", " ", obj).strip()
-        obj = re.split(r"\s\d[\d.,]+", obj)[0].strip()
-        return obj
+    lines = text.splitlines()
+    objek_lines = []
+    start = False
+
+    for line in lines:
+        if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
+            start = True
+            # ambil teks setelah kode objek
+            parts = re.split(r"\b\d{2}-\d{3}-\d{2}\b", line)
+            if len(parts) > 1:
+                objek_lines.append(parts[1].strip())
+            continue
+
+        if start:
+            # hentikan jika mulai muncul angka DPP besar atau kata "Dokumen"
+            if re.search(r"\d[\d.,]{5,}", line) or "Dokumen" in line:
+                break
+            if line.strip():
+                objek_lines.append(line.strip())
+
+    if objek_lines:
+        objek_full = " ".join(objek_lines)
+        objek_full = re.sub(r"\s+", " ", objek_full).strip()
+        return objek_full
     return ""
 
 # =========================
@@ -63,7 +80,7 @@ def extract_data_from_pdf(file):
     try:
         data = {}
 
-        # Header
+        # HEADER
         data["NOMOR"] = extract_safe(text, r"\n(\S{9})\s+\d{2}-\d{4}")
         data["MASA PAJAK"] = extract_safe(text, r"\n\S{9}\s+(\d{2}-\d{4})")
         data["SIFAT PEMOTONGAN"] = extract_safe(text, r"(TIDAK FINAL|FINAL)")
@@ -78,35 +95,30 @@ def extract_data_from_pdf(file):
         data["JENIS FASILITAS"] = extract_safe(text, r"B\.1\s*Jenis Fasilitas\s*:\s*(.+)")
         data["JENIS PPH"] = extract_safe(text, r"B\.2\s*Jenis PPh\s*:\s*(Pasal\s*\d+)")
 
-        # Ambil kode objek & objek pajak multi-baris
+        # OBJEK PAJAK multi-baris
         data["KODE OBJEK"] = extract_safe(text, r"(\d{2}-\d{3}-\d{2})")
         data["OBJEK PAJAK"] = extract_objek_pajak(text)
 
+        # DPP, Tarif, PPh
         data["DPP"], data["TARIF %"], data["PAJAK PENGHASILAN"] = smart_extract_dpp_tarif_pph(text)
 
-        # Dokumen
+        # Dokumen dasar
         data["JENIS DOKUMEN"] = extract_safe(text, r"Jenis Dokumen\s*:\s*(.+)")
         data["TANGGAL DOKUMEN"] = extract_safe(text, r"Tanggal\s*:\s*(\d{1,2} .+ \d{4})")
         data["NOMOR DOKUMEN"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
 
-        # =========================
-        # Tambahan kolom: B.10 dan B.11
-        # =========================
+        # Kolom tambahan B.10 dan B.11
         b10_raw = extract_safe(text, r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(.+)")
-        # Jika setelah B.10 langsung B.11 → kosongkan
-        if re.search(r"B\.10\s*Untuk Instansi Pemerintah.*:\s*B\.11", text, re.IGNORECASE):
+        if re.search(r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(B\.11|C\.)", text, re.IGNORECASE):
             b10_raw = "-"
         data["UNTUK INSTANSI PEMERINTAH"] = b10_raw
 
         sp2d_raw = extract_safe(text, r"B\.11\s*Nomor SP2D\s*:\s*(.+)")
-        # Jika langsung heading "C."
         if re.search(r"B\.11\s*Nomor SP2D\s*:\s*C\. IDENTITAS PEMOTONG", text, re.IGNORECASE):
             sp2d_raw = "-"
         data["NOMOR SP2D"] = sp2d_raw
 
-        # =========================
         # C. IDENTITAS PEMOTONG
-        # =========================
         data["NPWP / NIK PEMOTONG"] = extract_safe(text, r"C\.1 NPWP / NIK\s*:\s*(\d+)")
         data["NOMOR IDENTITAS TEMPAT USAHA PEMOTONG"] = extract_safe(text, r"C\.2.*?:\s*(\d+)")
         data["NAMA PEMOTONG"] = extract_safe(text, r"C\.3.*?:\s*(.+)")
@@ -114,6 +126,7 @@ def extract_data_from_pdf(file):
         data["NAMA PENANDATANGAN"] = extract_safe(text, r"C\.5 NAMA PENANDATANGAN\s*:\s*(.+)")
 
         return data
+
     except Exception as e:
         st.warning(f"Gagal ekstrak data: {e}")
         return None
