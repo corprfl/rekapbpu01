@@ -14,6 +14,7 @@ st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 # 🔍 Fungsi bantu regex aman
 # =====================================
 def extract_safe(text, pattern, group=1, default=""):
+    """Ekstraksi teks dengan regex aman"""
     match = re.search(pattern, text, re.IGNORECASE)
     return match.group(group).strip() if match else default
 
@@ -36,16 +37,14 @@ def smart_extract_dpp_tarif_pph(text):
     return 0, 0, 0
 
 # =====================================
-# 🔎 Ekstraksi OBJEK PAJAK multi-baris (fix akhir)
+# 🔎 Ekstraksi OBJEK PAJAK multi-baris
 # =====================================
 def extract_objek_pajak(text):
     """
-    Ambil teks objek pajak setelah kode objek pajak (B.3)
+    Ambil teks objek pajak setelah kode objek (B.3)
     dan hapus semua angka DPP/tarif/PPh yang nyelip di tengah.
     """
-    # gabung semua baris agar OCR tidak terpotong
     joined = " ".join(text.splitlines())
-    # ambil teks antara kode objek pajak dan bagian B.8 (dokumen)
     match = re.search(r"\b\d{2}-\d{3}-\d{2}\b\s+(.+?)B\.8", joined, re.DOTALL | re.IGNORECASE)
     if not match:
         return ""
@@ -82,7 +81,10 @@ def extract_data_from_pdf(file):
 
         # B. PEMOTONGAN
         data["JENIS FASILITAS"] = extract_safe(text, r"B\.1\s*Jenis Fasilitas\s*:\s*(.+)")
-        data["JENIS PPH"] = extract_safe(text, r"B\.2\s*Jenis PPh\s*:\s*(Pasal\s*\d+)")
+        data["JENIS PPH"] = extract_safe(
+            text,
+            r"B\.2\s*Jenis PPh\s*:\s*(Pasal\s*\d+(?:\s*Ayat\s*\(?\d+\)?)?)"
+        )
         data["KODE OBJEK"] = extract_safe(text, r"(\d{2}-\d{3}-\d{2})")
         data["OBJEK PAJAK"] = extract_objek_pajak(text)
         data["DPP"], data["TARIF %"], data["PAJAK PENGHASILAN"] = smart_extract_dpp_tarif_pph(text)
