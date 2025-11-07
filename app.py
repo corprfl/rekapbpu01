@@ -11,12 +11,10 @@ st.set_page_config(page_title="Rekap Bukti Potong PPh dari PDF ke Excel", layout
 st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 
 # =========================
-# 🔍 Fungsi bantu aman
+# 🔍 Fungsi bantu regex aman
 # =========================
 def extract_safe(text, pattern, group=1, default=""):
-    """
-    Fungsi regex aman untuk ekstraksi teks dari PDF
-    """
+    """Ekstraksi teks menggunakan regex dengan fallback nilai default"""
     match = re.search(pattern, text, re.IGNORECASE)
     return match.group(group).strip() if match else default
 
@@ -25,8 +23,8 @@ def extract_safe(text, pattern, group=1, default=""):
 # =========================
 def smart_extract_dpp_tarif_pph(text):
     """
-    Deteksi baris dengan kode objek pajak dan ekstrak DPP, Tarif (%), dan PPh.
-    Kini bisa baca angka dengan titik desimal (misal 1.5).
+    Mendeteksi baris kode objek pajak lalu mengekstrak nilai DPP, Tarif (%), dan PPh.
+    Bisa membaca angka dengan titik/koma desimal.
     """
     for line in text.splitlines():
         if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
@@ -42,7 +40,7 @@ def smart_extract_dpp_tarif_pph(text):
     return 0, 0, 0
 
 # =========================
-# 📄 Fungsi utama ekstraksi data PDF
+# 📄 Ekstraksi Data dari PDF
 # =========================
 def extract_data_from_pdf(file):
     with pdfplumber.open(file) as pdf:
@@ -51,43 +49,50 @@ def extract_data_from_pdf(file):
     try:
         data = {}
 
-        # Bagian Header
+        # =========================
+        # HEADER
+        # =========================
         data["NOMOR"] = extract_safe(text, r"\n(\S{9})\s+\d{2}-\d{4}")
         data["MASA PAJAK"] = extract_safe(text, r"\n\S{9}\s+(\d{2}-\d{4})")
         data["SIFAT PEMOTONGAN"] = extract_safe(text, r"(TIDAK FINAL|FINAL)")
         data["STATUS BUKTI"] = extract_safe(text, r"(NORMAL|PEMBETULAN)")
 
         # =========================
-        # Bagian A. Identitas Wajib Pajak
+        # A. IDENTITAS WAJIB PAJAK
         # =========================
         data["NPWP / NIK"] = extract_safe(text, r"A\.1 NPWP / NIK\s*:\s*(\d+)")
         data["NAMA"] = extract_safe(text, r"A\.2 NAMA\s*:\s*(.+)")
         data["NOMOR IDENTITAS TEMPAT USAHA"] = extract_safe(text, r"A\.3.*?:\s*(\d+)")
 
         # =========================
-        # Bagian B. Pemotongan/Pemungutan
+        # B. PEMOTONGAN DAN/ATAU PEMUNGUTAN PPh
         # =========================
         data["JENIS FASILITAS"] = extract_safe(text, r"B\.1\s*Jenis Fasilitas\s*:\s*(.+)")
         data["JENIS PPH"] = extract_safe(text, r"B\.2\s*Jenis PPh\s*:\s*(Pasal\s*\d+)")
         data["KODE OBJEK"] = extract_safe(text, r"(\d{2}-\d{3}-\d{2})")
         data["OBJEK PAJAK"] = extract_safe(text, r"\d{2}-\d{3}-\d{2}\s+([A-Za-z ]+)")
-
-        # Ekstraksi nilai-nilai numerik
         data["DPP"], data["TARIF %"], data["PAJAK PENGHASILAN"] = smart_extract_dpp_tarif_pph(text)
 
-        # Dokumen dasar
         data["JENIS DOKUMEN"] = extract_safe(text, r"Jenis Dokumen\s*:\s*(.+)")
         data["TANGGAL DOKUMEN"] = extract_safe(text, r"Tanggal\s*:\s*(\d{1,2} .+ \d{4})")
         data["NOMOR DOKUMEN"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
 
-        # Tambahan kolom baru dari permintaan user
+        # =========================
+        # Tambahan Kolom Baru
+        # =========================
         data["UNTUK INSTANSI PEMERINTAH"] = extract_safe(
             text, r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(.+)"
         )
-        data["NOMOR SP2D"] = extract_safe(text, r"B\.11\s*Nomor SP2D\s*:\s*(.+)")
+
+        # Deteksi isi SP2D
+        sp2d_raw = extract_safe(text, r"B\.11\s*Nomor SP2D\s*:\s*(.+)")
+        # Jika setelah Nomor SP2D langsung muncul "C. IDENTITAS PEMOTONG", isi kosong
+        if re.search(r"B\.11\s*Nomor SP2D\s*:\s*C\. IDENTITAS PEMOTONG", text, re.IGNORECASE):
+            sp2d_raw = "-"
+        data["NOMOR SP2D"] = sp2d_raw
 
         # =========================
-        # Bagian C. Identitas Pemotong
+        # C. IDENTITAS PEMOTONG DAN/ATAU PEMUNGUT
         # =========================
         data["NPWP / NIK PEMOTONG"] = extract_safe(text, r"C\.1 NPWP / NIK\s*:\s*(\d+)")
         data["NOMOR IDENTITAS TEMPAT USAHA PEMOTONG"] = extract_safe(text, r"C\.2.*?:\s*(\d+)")
@@ -102,7 +107,7 @@ def extract_data_from_pdf(file):
         return None
 
 # =========================
-# 📥 Upload & Proses PDF
+# 📥 Upload dan Proses PDF
 # =========================
 uploaded_files = st.file_uploader(
     "📤 Upload satu atau lebih file PDF Bukti Potong",
@@ -119,14 +124,14 @@ if uploaded_files:
                 result["FILE"] = file.name
                 all_data.append(result)
 
+    # =========================
+    # 💾 Tampilkan & Ekspor Excel
+    # =========================
     if all_data:
         df = pd.DataFrame(all_data)
         st.success(f"✅ Berhasil mengekstrak {len(df)} bukti potong")
-        st.dataframe(df)
+        st.dataframe(df, use_container_width=True)
 
-        # =========================
-        # 💾 Export ke Excel
-        # =========================
         output = BytesIO()
         df.to_excel(output, index=False)
         output.seek(0)
@@ -137,7 +142,6 @@ if uploaded_files:
             file_name="Rekap_Bukti_Potong.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
     else:
         st.error("❌ Tidak ada data berhasil diproses.")
 else:
