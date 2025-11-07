@@ -14,7 +14,7 @@ st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 # 🔍 Fungsi bantu regex aman
 # =========================
 def extract_safe(text, pattern, group=1, default=""):
-    """Ekstraksi teks menggunakan regex dengan fallback"""
+    """Ekstraksi teks menggunakan regex dengan fallback nilai default"""
     match = re.search(pattern, text, re.IGNORECASE)
     return match.group(group).strip() if match else default
 
@@ -41,8 +41,8 @@ def smart_extract_dpp_tarif_pph(text):
 # =========================
 def extract_objek_pajak(text):
     """
-    Menangkap seluruh teks objek pajak setelah kode objek (B.3)
-    sampai sebelum muncul angka besar (DPP) atau kata kunci dokumen.
+    Menangkap kalimat objek pajak setelah kode objek (B.3)
+    dan menghapus angka DPP, tarif, atau PPh yang nyelip di tengah.
     """
     lines = text.splitlines()
     objek_lines = []
@@ -51,18 +51,21 @@ def extract_objek_pajak(text):
     for line in lines:
         if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
             start = True
-            # ambil teks setelah kode objek
             parts = re.split(r"\b\d{2}-\d{3}-\d{2}\b", line)
             if len(parts) > 1:
                 objek_lines.append(parts[1].strip())
             continue
 
         if start:
-            # hentikan jika mulai muncul angka DPP besar atau kata "Dokumen"
-            if re.search(r"\d[\d.,]{5,}", line) or "Dokumen" in line:
+            # hentikan jika sudah masuk bagian DPP atau dokumen
+            if "Dokumen" in line:
                 break
-            if line.strip():
-                objek_lines.append(line.strip())
+            if not line.strip():
+                continue
+            # buang angka, nilai uang, dan Rp di tengah kalimat
+            clean_line = re.sub(r"\b\d[\d.,]*\b", "", line)
+            clean_line = re.sub(r"Rp", "", clean_line, flags=re.IGNORECASE)
+            objek_lines.append(clean_line.strip())
 
     if objek_lines:
         objek_full = " ".join(objek_lines)
@@ -94,20 +97,16 @@ def extract_data_from_pdf(file):
         # B. PEMOTONGAN
         data["JENIS FASILITAS"] = extract_safe(text, r"B\.1\s*Jenis Fasilitas\s*:\s*(.+)")
         data["JENIS PPH"] = extract_safe(text, r"B\.2\s*Jenis PPh\s*:\s*(Pasal\s*\d+)")
-
-        # OBJEK PAJAK multi-baris
         data["KODE OBJEK"] = extract_safe(text, r"(\d{2}-\d{3}-\d{2})")
         data["OBJEK PAJAK"] = extract_objek_pajak(text)
-
-        # DPP, Tarif, PPh
         data["DPP"], data["TARIF %"], data["PAJAK PENGHASILAN"] = smart_extract_dpp_tarif_pph(text)
 
-        # Dokumen dasar
+        # DOKUMEN DASAR
         data["JENIS DOKUMEN"] = extract_safe(text, r"Jenis Dokumen\s*:\s*(.+)")
         data["TANGGAL DOKUMEN"] = extract_safe(text, r"Tanggal\s*:\s*(\d{1,2} .+ \d{4})")
         data["NOMOR DOKUMEN"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
 
-        # Kolom tambahan B.10 dan B.11
+        # B.10 & B.11
         b10_raw = extract_safe(text, r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(.+)")
         if re.search(r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(B\.11|C\.)", text, re.IGNORECASE):
             b10_raw = "-"
@@ -126,7 +125,6 @@ def extract_data_from_pdf(file):
         data["NAMA PENANDATANGAN"] = extract_safe(text, r"C\.5 NAMA PENANDATANGAN\s*:\s*(.+)")
 
         return data
-
     except Exception as e:
         st.warning(f"Gagal ekstrak data: {e}")
         return None
@@ -137,7 +135,7 @@ def extract_data_from_pdf(file):
 uploaded_files = st.file_uploader(
     "📤 Upload satu atau lebih file PDF Bukti Potong",
     type="pdf",
-    accept_multiple_files=True
+    accept_multiple_files=True,
 )
 
 if uploaded_files:
@@ -161,7 +159,7 @@ if uploaded_files:
             "⬇️ Unduh Excel",
             output,
             file_name="Rekap_Bukti_Potong.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     else:
         st.error("❌ Tidak ada data berhasil diproses.")
