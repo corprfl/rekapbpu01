@@ -48,9 +48,7 @@ def extract_objek_pajak(text):
     match = re.search(pattern, text)
     if match:
         obj = match.group(1)
-        # hilangkan newline di tengah kalimat
         obj = re.sub(r"\s*\n\s*", " ", obj).strip()
-        # hentikan di depan angka DPP (contoh 63.146.550)
         obj = re.split(r"\s\d[\d.,]+", obj)[0].strip()
         return obj
     return ""
@@ -91,10 +89,14 @@ def extract_data_from_pdf(file):
         data["TANGGAL DOKUMEN"] = extract_safe(text, r"Tanggal\s*:\s*(\d{1,2} .+ \d{4})")
         data["NOMOR DOKUMEN"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
 
-        # Tambahan kolom
-        data["UNTUK INSTANSI PEMERINTAH"] = extract_safe(
-            text, r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(.+)"
-        )
+        # =========================
+        # Tambahan kolom: B.10 dan B.11
+        # =========================
+        b10_raw = extract_safe(text, r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(.+)")
+        # Jika setelah B.10 langsung B.11 → kosongkan
+        if re.search(r"B\.10\s*Untuk Instansi Pemerintah.*:\s*B\.11", text, re.IGNORECASE):
+            b10_raw = "-"
+        data["UNTUK INSTANSI PEMERINTAH"] = b10_raw
 
         sp2d_raw = extract_safe(text, r"B\.11\s*Nomor SP2D\s*:\s*(.+)")
         # Jika langsung heading "C."
@@ -102,7 +104,9 @@ def extract_data_from_pdf(file):
             sp2d_raw = "-"
         data["NOMOR SP2D"] = sp2d_raw
 
+        # =========================
         # C. IDENTITAS PEMOTONG
+        # =========================
         data["NPWP / NIK PEMOTONG"] = extract_safe(text, r"C\.1 NPWP / NIK\s*:\s*(\d+)")
         data["NOMOR IDENTITAS TEMPAT USAHA PEMOTONG"] = extract_safe(text, r"C\.2.*?:\s*(\d+)")
         data["NAMA PEMOTONG"] = extract_safe(text, r"C\.3.*?:\s*(.+)")
