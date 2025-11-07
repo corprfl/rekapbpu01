@@ -4,20 +4,24 @@ import pandas as pd
 import re
 from io import BytesIO
 
+# =====================================
+# 🏷️ Konfigurasi Streamlit
+# =====================================
 st.set_page_config(page_title="Rekap Bukti Potong PPh dari PDF ke Excel", layout="wide")
 st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 
-# -----------------------------
-# Helper Regex Aman
-# -----------------------------
+# =====================================
+# 🔍 Fungsi bantu regex aman
+# =====================================
 def extract_safe(text, pattern, group=1, default=""):
     match = re.search(pattern, text, re.IGNORECASE)
     return match.group(group).strip() if match else default
 
-# -----------------------------
-# Ekstraksi DPP, Tarif, PPh
-# -----------------------------
+# =====================================
+# 💡 Ekstraksi DPP, Tarif, dan PPh
+# =====================================
 def smart_extract_dpp_tarif_pph(text):
+    """Ekstrak nilai DPP, tarif (%), dan PPh"""
     for line in text.splitlines():
         if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
             numbers = re.findall(r"\d[\d.,]*", line)
@@ -31,13 +35,13 @@ def smart_extract_dpp_tarif_pph(text):
                     continue
     return 0, 0, 0
 
-# -----------------------------
-# Ekstraksi OBJEK PAJAK multi-baris (final fix)
-# -----------------------------
+# =====================================
+# 🔎 Ekstraksi OBJEK PAJAK multi-baris (fix akhir)
+# =====================================
 def extract_objek_pajak(text):
     """
-    Ambil teks objek pajak dari setelah kode objek pajak sampai sebelum DPP/Dokumen.
-    Hilangkan semua angka dan simbol uang di tengah kalimat.
+    Ambil teks objek pajak dari setelah kode objek pajak
+    sampai sebelum DPP/Dokumen. Hilangkan semua angka & simbol uang.
     """
     lines = text.splitlines()
     objek_lines = []
@@ -54,28 +58,27 @@ def extract_objek_pajak(text):
         if start:
             if "Dokumen" in line or re.match(r"^\s*$", line):
                 break
-            # Hilangkan angka & nilai desimal nyelip di tengah
-            clean_line = re.sub(r"\b\d[\d.,]*\b", "", line)
+            # Hilangkan semua angka, desimal, dan Rp di tengah teks
+            clean_line = re.sub(r"[\d.,]+", " ", line)
             clean_line = re.sub(r"Rp", "", clean_line, flags=re.IGNORECASE)
             objek_lines.append(clean_line.strip())
 
     if objek_lines:
         objek_full = " ".join(objek_lines)
-        # Hapus angka yang masih menempel di antara huruf
-        objek_full = re.sub(r"\s+\d[\d.,]+\s+", " ", objek_full)
         objek_full = re.sub(r"\s+", " ", objek_full).strip()
         return objek_full
     return ""
 
-# -----------------------------
-# Ekstraksi Data Utama dari PDF
-# -----------------------------
+# =====================================
+# 📄 Ekstraksi Data dari PDF
+# =====================================
 def extract_data_from_pdf(file):
     with pdfplumber.open(file) as pdf:
         text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
 
     try:
         data = {}
+        # HEADER
         data["NOMOR"] = extract_safe(text, r"\n(\S{9})\s+\d{2}-\d{4}")
         data["MASA PAJAK"] = extract_safe(text, r"\n\S{9}\s+(\d{2}-\d{4})")
         data["SIFAT PEMOTONGAN"] = extract_safe(text, r"(TIDAK FINAL|FINAL)")
@@ -93,12 +96,12 @@ def extract_data_from_pdf(file):
         data["OBJEK PAJAK"] = extract_objek_pajak(text)
         data["DPP"], data["TARIF %"], data["PAJAK PENGHASILAN"] = smart_extract_dpp_tarif_pph(text)
 
-        # Dokumen
+        # Dokumen dasar
         data["JENIS DOKUMEN"] = extract_safe(text, r"Jenis Dokumen\s*:\s*(.+)")
         data["TANGGAL DOKUMEN"] = extract_safe(text, r"Tanggal\s*:\s*(\d{1,2} .+ \d{4})")
         data["NOMOR DOKUMEN"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
 
-        # B.10 & B.11
+        # B.10 dan B.11
         b10_raw = extract_safe(text, r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(.+)")
         if re.search(r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(B\.11|C\.)", text, re.IGNORECASE):
             b10_raw = "-"
@@ -120,11 +123,13 @@ def extract_data_from_pdf(file):
         st.warning(f"Gagal ekstrak data: {e}")
         return None
 
-# -----------------------------
-# Streamlit UI
-# -----------------------------
+# =====================================
+# 🚀 Streamlit UI
+# =====================================
 uploaded_files = st.file_uploader(
-    "📤 Upload satu atau lebih file PDF Bukti Potong", type="pdf", accept_multiple_files=True
+    "📤 Upload satu atau lebih file PDF Bukti Potong",
+    type="pdf",
+    accept_multiple_files=True,
 )
 
 if uploaded_files:
