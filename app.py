@@ -40,34 +40,25 @@ def smart_extract_dpp_tarif_pph(text):
 # =====================================
 def extract_objek_pajak(text):
     """
-    Ambil teks objek pajak dari setelah kode objek pajak
-    sampai sebelum DPP/Dokumen. Hilangkan semua angka & simbol uang.
+    Ambil teks objek pajak setelah kode objek pajak (B.3)
+    dan hapus semua angka DPP/tarif/PPh yang nyelip di tengah.
     """
-    lines = text.splitlines()
-    objek_lines = []
-    start = False
-
-    for line in lines:
-        if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
-            start = True
-            parts = re.split(r"\b\d{2}-\d{3}-\d{2}\b", line)
-            if len(parts) > 1:
-                objek_lines.append(parts[1].strip())
-            continue
-
-        if start:
-            if "Dokumen" in line or re.match(r"^\s*$", line):
-                break
-            # Hilangkan semua angka, desimal, dan Rp di tengah teks
-            clean_line = re.sub(r"[\d.,]+", " ", line)
-            clean_line = re.sub(r"Rp", "", clean_line, flags=re.IGNORECASE)
-            objek_lines.append(clean_line.strip())
-
-    if objek_lines:
-        objek_full = " ".join(objek_lines)
-        objek_full = re.sub(r"\s+", " ", objek_full).strip()
-        return objek_full
-    return ""
+    # gabung semua baris agar OCR tidak terpotong
+    joined = " ".join(text.splitlines())
+    # ambil teks antara kode objek pajak dan bagian B.8 (dokumen)
+    match = re.search(r"\b\d{2}-\d{3}-\d{2}\b\s+(.+?)B\.8", joined, re.DOTALL | re.IGNORECASE)
+    if not match:
+        return ""
+    objek = match.group(1)
+    # hapus blok angka di tengah seperti "63.146.550 0.3 189.440"
+    objek = re.sub(r"\d[\d.,\s]+(?=[A-Za-z])", "", objek)
+    # hapus sisa angka tunggal/desimal
+    objek = re.sub(r"[\d.,]+", "", objek)
+    # hapus kata Rp jika ada
+    objek = re.sub(r"Rp", "", objek, flags=re.IGNORECASE)
+    # rapikan spasi
+    objek = re.sub(r"\s+", " ", objek).strip()
+    return objek
 
 # =====================================
 # 📄 Ekstraksi Data dari PDF
@@ -119,6 +110,7 @@ def extract_data_from_pdf(file):
         data["TANGGAL PEMOTONGAN"] = extract_safe(text, r"C\.4 TANGGAL\s*:\s*(\d{1,2} .+ \d{4})")
         data["NAMA PENANDATANGAN"] = extract_safe(text, r"C\.5 NAMA PENANDATANGAN\s*:\s*(.+)")
         return data
+
     except Exception as e:
         st.warning(f"Gagal ekstrak data: {e}")
         return None
