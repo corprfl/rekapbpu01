@@ -1,21 +1,18 @@
-# app.py - Revisi ke-202507211915-2
-# Tambahan:
-# ✅ Deskripsi aplikasi
-# ✅ Panduan penggunaan
-# ✅ Peringatan: hanya untuk PDF Bukti Potong Unifikasi dari Coretax (bukan hasil scan)
-# ✅ Disclaimer keamanan & tanggung jawab pengguna
-# ✅ Warna & tema tetap seperti versi sebelumnya
+# app.py - Revisi ke-202507211915-4
+# ✅ Aplikasi Rekap Bukti Potong Unifikasi (bukan rename)
+# ✅ Output ke Excel (.xlsx)
+# ✅ Dilengkapi deskripsi, cara pakai, catatan Coretax, dan disclaimer
+# ✅ Tema gelap profesional biru
 
 import streamlit as st
 import pdfplumber
 import pandas as pd
 import re
 from io import BytesIO
-import zipfile
 
-st.set_page_config(page_title="Rekap & Rename Bukti Potong Unifikasi", layout="centered")
+st.set_page_config(page_title="Rekap Bukti Potong Unifikasi (Coretax PDF Only)", layout="wide")
 
-# ======== THEME SETUP ========
+# ======== THEME ========
 st.markdown("""
 <style>
     .stApp {
@@ -30,6 +27,7 @@ st.markdown("""
         color: white !important;
         border-radius: 8px;
         padding: 0.5em 1em;
+        font-weight: 600;
     }
     .stFileUploader {
         background-color: #161b22;
@@ -41,47 +39,49 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ======== HEADER ========
-st.markdown("## 🧾 Rekap & Rename Bukti Potong Unifikasi")
+st.markdown("## 📊 Rekap Bukti Potong Unifikasi (PDF Coretax Only)")
 st.markdown("*By: Reza Fahlevi Lubis BKP @zavibis*")
 
 # ======== DESKRIPSI APLIKASI ========
 st.markdown("""
-Aplikasi ini digunakan untuk **membaca dan menamai ulang (rename)** file PDF **Bukti Potong Unifikasi**
-berdasarkan metadata yang terdapat di dalam dokumen, seperti:
-- Nomor Bukti Potong  
-- Jenis PPh dan Kode Objek Pajak  
-- Nama Pemotong dan Pihak Dipotong  
-- Masa dan Tahun Pajak  
-- Tanggal Pemotongan, Penandatangan, dan informasi lainnya  
+Aplikasi ini berfungsi untuk **membaca, mengekstrak, dan merekap data Bukti Potong Unifikasi**
+langsung dari file **PDF hasil unduhan Coretax DJP**, lalu menyimpannya ke format **Excel (.xlsx)**.
 
-⚠️ **Catatan penting:**
-Aplikasi ini hanya dapat membaca **PDF hasil unduhan langsung dari sistem Coretax DJP**,  
+Data yang dibaca antara lain:
+- Nomor Bukti Potong, Masa & Tahun Pajak  
+- Jenis PPh dan Kode Objek Pajak  
+- DPP, Tarif (%), dan PPh Dipotong  
+- Nama & NPWP Pemotong dan Pihak Dipotong  
+- Tanggal Dokumen, Tanggal Pemotongan, dan Penandatangan
+
+⚠️ **Catatan penting:**  
+Aplikasi ini hanya bisa membaca **PDF hasil unduhan resmi dari Coretax DJP**,  
 **bukan hasil scan atau hasil foto.**  
-Pastikan file berasal dari portal DJP (biasanya teks masih bisa diseleksi di PDF).
+Pastikan teks PDF masih dapat diseleksi (copy-pasteable).
 """)
 
-# ======== PANDUAN PENGGUNAAN ========
+# ======== CARA PAKAI ========
 st.markdown("### 📘 Cara Menggunakan Aplikasi")
 st.markdown("""
-1. Klik tombol **Browse files** untuk mengunggah satu atau beberapa file **PDF Bukti Potong Unifikasi** dari Coretax.  
-2. Aplikasi akan otomatis membaca informasi penting dari setiap file (nama pemotong, masa pajak, kode objek pajak, dll).  
-3. Setelah data tampil, pilih kolom mana saja yang ingin digunakan untuk format penamaan file.  
-4. Klik tombol **Rename PDF & Download** untuk memproses semua file.  
-5. File hasil rename akan digabungkan dalam satu file ZIP yang bisa langsung diunduh.
+1. Klik **Browse files** untuk mengunggah satu atau beberapa file **Bukti Potong Unifikasi (PDF)** dari Coretax.  
+2. Aplikasi akan menampilkan tabel hasil ekstraksi otomatis dari setiap file.  
+3. Periksa hasil rekap di tampilan bawah.  
+4. Klik tombol **💾 Download Excel Rekap** untuk mengunduh hasil dalam format `.xlsx`.
 """)
 
 # ======== DISCLAIMER ========
 st.markdown("---")
 st.markdown("### ⚠️ Disclaimer")
 st.markdown("""
-Aplikasi ini **tidak menyimpan, mengunggah, atau mengirimkan data apa pun ke server**.  
-Semua proses dijalankan **sepenuhnya di sisi pengguna (local processing)**.
+Aplikasi ini **tidak menyimpan, mengunggah, atau mengirimkan data ke server mana pun.**  
+Semua proses dijalankan **sepenuhnya di perangkat Anda (local processing).**
 
-Aplikasi ini **bukan situs resmi Direktorat Jenderal Pajak (DJP)** dan tidak berafiliasi dengan otoritas pajak.  
-Pengguna bertanggung jawab penuh atas **penggunaan, isi, dan keamanan dokumen** yang diproses melalui aplikasi ini.
+Aplikasi ini **bukan situs resmi Direktorat Jenderal Pajak (DJP)**  
+dan tidak berafiliasi dengan otoritas pajak mana pun.  
+Pengguna bertanggung jawab penuh atas **penggunaan dan keamanan dokumen** yang diproses.
 """)
 
-# ======== UTILITAS EKSTRAKSI ========
+# ======== FUNGSI PENDUKUNG ========
 def extract_safe(text, pattern, group=1, default=""):
     match = re.search(pattern, text)
     return match.group(group).strip() if match else default
@@ -108,76 +108,69 @@ def extract_data_from_pdf(file_like):
         data = {}
         data["Nomor Bukti Potong"] = extract_safe(text, r"\n(\S{9})\s+\d{2}-\d{4}")
         masa_pajak = extract_safe(text, r"\n\S{9}\s+(\d{2}-\d{4})")
-        data["MASA PAJAK"] = masa_pajak
+        data["Masa Pajak"] = masa_pajak
         if "-" in masa_pajak:
-            data["MASA"], data["TAHUN"] = masa_pajak.split("-")
+            data["Masa"], data["Tahun"] = masa_pajak.split("-")
         else:
-            data["MASA"], data["TAHUN"] = "", ""
+            data["Masa"], data["Tahun"] = "", ""
 
-        data["SIFAT PEMOTONGAN"] = extract_safe(text, r"(TIDAK FINAL|FINAL)")
-        data["STATUS BUKTI"] = extract_safe(text, r"(NORMAL|PEMBETULAN)")
+        data["Sifat Pemotongan"] = extract_safe(text, r"(TIDAK FINAL|FINAL)")
+        data["Status Bukti"] = extract_safe(text, r"(NORMAL|PEMBETULAN)")
 
-        data["NPWP / NIK PENERIMA PENGHASILAN"] = extract_safe(text, r"A\.1 NPWP / NIK\s*:\s*(\d+)")
-        data["NAMA PENERIMA PENGHASILAN"] = extract_safe(text, r"A\.2 NAMA\s*:\s*(.+)")
-        data["NOMOR IDENTITAS TEMPAT KEGIATAN USAHA"] = extract_safe(text, r"A\.3 NOMOR IDENTITAS.*?:\s*(\d+)")
+        data["NPWP / NIK Pihak Dipotong"] = extract_safe(text, r"A\.1 NPWP / NIK\s*:\s*(\d+)")
+        data["Nama Pihak Dipotong"] = extract_safe(text, r"A\.2 NAMA\s*:\s*(.+)")
+        data["NITKU Pihak Dipotong"] = extract_safe(text, r"A\.3 NOMOR IDENTITAS.*?:\s*(\d+)")
 
-        data["JENIS PPH"] = extract_safe(text, r"B\.2 Jenis PPh\s*:\s*(Pasal \d+)")
-        data["KODE OBJEK PAJAK"] = extract_safe(text, r"(\d{2}-\d{3}-\d{2})")
-        data["OBJEK PAJAK"] = extract_safe(text, r"\d{2}-\d{3}-\d{2}\s+([A-Za-z ]+)")
+        data["Jenis PPh"] = extract_safe(text, r"B\.2 Jenis PPh\s*:\s*(Pasal \d+)")
+        data["Kode Objek Pajak"] = extract_safe(text, r"(\d{2}-\d{3}-\d{2})")
+        data["Objek Pajak"] = extract_safe(text, r"\d{2}-\d{3}-\d{2}\s+([A-Za-z ]+)")
         dpp, tarif, pph = smart_extract_dpp_tarif_pph(text)
-        data["DPP"] = dpp
-        data["TARIF %"] = tarif
-        data["PAJAK PENGHASILAN"] = pph
+        data["DPP (Rp)"] = dpp
+        data["Tarif (%)"] = tarif
+        data["PPh Dipotong (Rp)"] = pph
 
-        data["JENIS DOKUMEN"] = extract_safe(text, r"Jenis Dokumen\s*:\s*(.+)")
-        data["TANGGAL DOKUMEN"] = extract_safe(text, r"Tanggal\s*:\s*(\d{2} .+ \d{4})")
-        data["NOMOR DOKUMEN"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
+        data["Jenis Dokumen"] = extract_safe(text, r"Jenis Dokumen\s*:\s*(.+)")
+        data["Tanggal Dokumen"] = extract_safe(text, r"Tanggal\s*:\s*(\d{2} .+ \d{4})")
+        data["Nomor Dokumen"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
 
-        data["NPWP / NIK PEMOTONG"] = extract_safe(text, r"C\.1 NPWP / NIK\s*:\s*(\d+)")
-        data["NOMOR IDENTITAS TEMPAT USAHA PEMOTONG"] = extract_safe(text, r"C\.2.*?:\s*(\d+)")
-        data["NAMA PEMOTONG"] = extract_safe(text, r"C\.3 NAMA PEMOTONG.*?:\s*(.+)")
-        data["TANGGAL PEMOTONGAN"] = extract_safe(text, r"C\.4 TANGGAL\s*:\s*(\d{2} .+ \d{4})")
-        data["PENANDATANGAN PEMOTONG"] = extract_safe(text, r"C\.5 NAMA PENANDATANGAN\s*:\s*(.+)")
+        data["NPWP / NIK Pemotong"] = extract_safe(text, r"C\.1 NPWP / NIK\s*:\s*(\d+)")
+        data["NITKU Pemotong"] = extract_safe(text, r"C\.2.*?:\s*(\d+)")
+        data["Nama Pemotong"] = extract_safe(text, r"C\.3 NAMA PEMOTONG.*?:\s*(.+)")
+        data["Tanggal Pemotongan"] = extract_safe(text, r"C\.4 TANGGAL\s*:\s*(\d{2} .+ \d{4})")
+        data["Penandatangan"] = extract_safe(text, r"C\.5 NAMA PENANDATANGAN\s*:\s*(.+)")
+
         return data
     except Exception as e:
         st.warning(f"Gagal ekstrak data: {e}")
         return None
 
-def sanitize_filename(text):
-    return re.sub(r'[\\/*?:"<>|]', "_", str(text))
-
-def generate_filename(row, selected_cols):
-    parts = [sanitize_filename(str(row[col])) for col in selected_cols]
-    return "Bukti Potong " + "_".join(parts) + ".pdf"
-
-# ======== FILE UPLOAD SECTION ========
-uploaded_files = st.file_uploader("📎 Upload PDF Bukti Potong (hasil unduhan Coretax)", type=["pdf"], accept_multiple_files=True)
+# ======== UNGGAH FILE ========
+uploaded_files = st.file_uploader("📎 Upload PDF Bukti Potong (hasil unduhan Coretax, bukan hasil scan)", type=["pdf"], accept_multiple_files=True)
 
 if uploaded_files:
     data_rows = []
     for uploaded_file in uploaded_files:
         with st.spinner(f"📄 Membaca {uploaded_file.name}..."):
             pdf_bytes = uploaded_file.read()
-            raw_data = extract_data_from_pdf(BytesIO(pdf_bytes))
-            if raw_data:
-                raw_data["OriginalName"] = uploaded_file.name
-                raw_data["FileBytes"] = pdf_bytes
-                data_rows.append(raw_data)
+            result = extract_data_from_pdf(BytesIO(pdf_bytes))
+            if result:
+                result["Nama File Asli"] = uploaded_file.name
+                data_rows.append(result)
 
     if data_rows:
-        df = pd.DataFrame(data_rows).drop(columns=["FileBytes", "OriginalName"])
-        st.markdown("### ✅ Data berhasil diekstrak dari file berikut:")
-        st.dataframe(df)
+        df = pd.DataFrame(data_rows)
+        st.markdown("### ✅ Berikut data yang berhasil diekstrak:")
+        st.dataframe(df, use_container_width=True)
 
-        column_options = df.columns.tolist()
-        selected_columns = st.multiselect("### ✏️ Pilih Kolom untuk Format Nama File", column_options, default=[], key="formatselector")
+        # ======== DOWNLOAD EXCEL ========
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name="Rekap Bukti Potong")
+        output.seek(0)
 
-        if st.button("🔁 Rename PDF & Download"):
-            zip_buffer = BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-                for i, row in df.iterrows():
-                    filename = generate_filename(row, selected_columns)
-                    zipf.writestr(filename, data_rows[i]["FileBytes"])
-            zip_buffer.seek(0)
-            st.success("✅ Berhasil! Klik tombol di bawah ini untuk mengunduh file ZIP.")
-            st.download_button("📦 Download ZIP Bukti Potong", zip_buffer, file_name="bukti_potong_renamed.zip", mime="application/zip")
+        st.download_button(
+            label="💾 Download Excel Rekap",
+            data=output,
+            file_name="rekap_bukti_potong_unifikasi.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
