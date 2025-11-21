@@ -11,6 +11,42 @@ st.set_page_config(page_title="Rekap Bukti Potong PPh dari PDF ke Excel", layout
 st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 
 # =====================================
+# 📝 DESKRIPSI SINGKAT
+# =====================================
+st.markdown("""
+Aplikasi ini berfungsi untuk mengekstrak **Bukti Potong PPh Unifikasi (Coretax DJP)** 
+langsung dari file PDF resmi (bukan hasil scan).  
+Hasil ekstraksi otomatis akan disajikan dalam bentuk tabel dan dapat diunduh menjadi file **Excel (.xlsx)**.
+""")
+
+# =====================================
+# 📘 PETUNJUK PENGGUNAAN
+# =====================================
+st.markdown("""
+### 📘 Cara Menggunakan
+1. Upload satu atau lebih file **PDF Bukti Potong Unifikasi** yang diunduh dari Coretax.
+2. Sistem akan membaca isi PDF dan mengekstrak data penting seperti:  
+   - Nomor Bukti  
+   - Masa Pajak  
+   - Status Bukti (**NORMAL / PEMBETULAN / DIBATALKAN**)  
+   - Identitas Pihak Dipotong & Pemotong  
+   - Jenis PPh, Kode Objek Pajak, Objek Pajak  
+   - DPP, Tarif, dan PPh Dipotong  
+3. Lihat hasil ekstraksi pada tabel di bawah.
+4. Klik **Unduh Excel** untuk menyimpan hasil rekap.
+""")
+
+# =====================================
+# ⚠️ DISCLAIMER
+# =====================================
+st.markdown("""
+### ⚠️ Disclaimer
+- Semua proses dilakukan **sepenuhnya di perangkat Anda (local processing)**.  
+- Aplikasi ini **tidak mengirim atau menyimpan dokumen** ke server mana pun.  
+- Aplikasi ini **bukan aplikasi resmi DJP** dan tidak memiliki afiliasi dengan otoritas pajak.  
+""")
+
+# =====================================
 # 🔍 Fungsi bantu regex aman
 # =====================================
 def extract_safe(text, pattern, group=1, default=""):
@@ -36,27 +72,17 @@ def smart_extract_dpp_tarif_pph(text):
     return 0, 0, 0
 
 # =====================================
-# 🔎 Ekstraksi OBJEK PAJAK multi-baris (fix akhir)
+# 🔎 Ekstraksi OBJEK PAJAK multi-baris
 # =====================================
 def extract_objek_pajak(text):
-    """
-    Ambil teks objek pajak setelah kode objek pajak (B.3)
-    dan hapus semua angka DPP/tarif/PPh yang nyelip di tengah.
-    """
-    # gabung semua baris agar OCR tidak terpotong
     joined = " ".join(text.splitlines())
-    # ambil teks antara kode objek pajak dan bagian B.8 (dokumen)
     match = re.search(r"\b\d{2}-\d{3}-\d{2}\b\s+(.+?)B\.8", joined, re.DOTALL | re.IGNORECASE)
     if not match:
         return ""
     objek = match.group(1)
-    # hapus blok angka di tengah seperti "63.146.550 0.3 189.440"
     objek = re.sub(r"\d[\d.,\s]+(?=[A-Za-z])", "", objek)
-    # hapus sisa angka tunggal/desimal
     objek = re.sub(r"[\d.,]+", "", objek)
-    # hapus kata Rp jika ada
     objek = re.sub(r"Rp", "", objek, flags=re.IGNORECASE)
-    # rapikan spasi
     objek = re.sub(r"\s+", " ", objek).strip()
     return objek
 
@@ -69,11 +95,21 @@ def extract_data_from_pdf(file):
 
     try:
         data = {}
+
+        # =========================
+        # FIX STATUS BUKTI ✓
+        # =========================
+        data["STATUS BUKTI"] = extract_safe(
+            text,
+            r"(NORMAL|DIBATALKAN|PEMBETULAN(?: KE-?\d+)?)",
+            group=1,
+            default=""
+        ).upper()
+
         # HEADER
         data["NOMOR"] = extract_safe(text, r"\n(\S{9})\s+\d{2}-\d{4}")
         data["MASA PAJAK"] = extract_safe(text, r"\n\S{9}\s+(\d{2}-\d{4})")
         data["SIFAT PEMOTONGAN"] = extract_safe(text, r"(TIDAK FINAL|FINAL)")
-        data["STATUS BUKTI"] = extract_safe(text, r"(NORMAL|PEMBETULAN)")
 
         # A. IDENTITAS
         data["NPWP / NIK"] = extract_safe(text, r"A\.1 NPWP / NIK\s*:\s*(\d+)")
@@ -109,6 +145,7 @@ def extract_data_from_pdf(file):
         data["NAMA PEMOTONG"] = extract_safe(text, r"C\.3.*?:\s*(.+)")
         data["TANGGAL PEMOTONGAN"] = extract_safe(text, r"C\.4 TANGGAL\s*:\s*(\d{1,2} .+ \d{4})")
         data["NAMA PENANDATANGAN"] = extract_safe(text, r"C\.5 NAMA PENANDATANGAN\s*:\s*(.+)")
+
         return data
 
     except Exception as e:
