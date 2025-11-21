@@ -14,13 +14,14 @@ st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 # 🔍 Fungsi bantu regex aman
 # =====================================
 def extract_safe(text, pattern, group=1, default=""):
-    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+    match = re.search(pattern, text, re.IGNORECASE)
     return match.group(group).strip() if match else default
 
 # =====================================
 # 💡 Ekstraksi DPP, Tarif, dan PPh
 # =====================================
 def smart_extract_dpp_tarif_pph(text):
+    """Ekstrak nilai DPP, tarif (%), dan PPh"""
     for line in text.splitlines():
         if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
             numbers = re.findall(r"\d[\d.,]*", line)
@@ -35,17 +36,27 @@ def smart_extract_dpp_tarif_pph(text):
     return 0, 0, 0
 
 # =====================================
-# 🔎 Ekstraksi OBJEK PAJAK (multi-baris)
+# 🔎 Ekstraksi OBJEK PAJAK multi-baris (fix akhir)
 # =====================================
 def extract_objek_pajak(text):
+    """
+    Ambil teks objek pajak setelah kode objek pajak (B.3)
+    dan hapus semua angka DPP/tarif/PPh yang nyelip di tengah.
+    """
+    # gabung semua baris agar OCR tidak terpotong
     joined = " ".join(text.splitlines())
+    # ambil teks antara kode objek pajak dan bagian B.8 (dokumen)
     match = re.search(r"\b\d{2}-\d{3}-\d{2}\b\s+(.+?)B\.8", joined, re.DOTALL | re.IGNORECASE)
     if not match:
         return ""
     objek = match.group(1)
+    # hapus blok angka di tengah seperti "63.146.550 0.3 189.440"
     objek = re.sub(r"\d[\d.,\s]+(?=[A-Za-z])", "", objek)
+    # hapus sisa angka tunggal/desimal
     objek = re.sub(r"[\d.,]+", "", objek)
+    # hapus kata Rp jika ada
     objek = re.sub(r"Rp", "", objek, flags=re.IGNORECASE)
+    # rapikan spasi
     objek = re.sub(r"\s+", " ", objek).strip()
     return objek
 
@@ -58,22 +69,11 @@ def extract_data_from_pdf(file):
 
     try:
         data = {}
-
-        # ======================
-        # FIX: STATUS BUKTI ✓
-        # ======================
-        status = extract_safe(
-            text,
-            r"(NORMAL|DIBATALKAN|PEMBETULAN(?: KE-?\d+)?)",
-            default=""
-        ).upper()
-        data["STATUS BUKTI"] = status
-        # ======================
-
         # HEADER
         data["NOMOR"] = extract_safe(text, r"\n(\S{9})\s+\d{2}-\d{4}")
         data["MASA PAJAK"] = extract_safe(text, r"\n\S{9}\s+(\d{2}-\d{4})")
         data["SIFAT PEMOTONGAN"] = extract_safe(text, r"(TIDAK FINAL|FINAL)")
+        data["STATUS BUKTI"] = extract_safe(text, r"(NORMAL|PEMBETULAN)")
 
         # A. IDENTITAS
         data["NPWP / NIK"] = extract_safe(text, r"A\.1 NPWP / NIK\s*:\s*(\d+)")
@@ -92,7 +92,7 @@ def extract_data_from_pdf(file):
         data["TANGGAL DOKUMEN"] = extract_safe(text, r"Tanggal\s*:\s*(\d{1,2} .+ \d{4})")
         data["NOMOR DOKUMEN"] = extract_safe(text, r"Nomor Dokumen\s*:\s*(.+)")
 
-        # B.10 & B.11
+        # B.10 dan B.11
         b10_raw = extract_safe(text, r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(.+)")
         if re.search(r"B\.10\s*Untuk Instansi Pemerintah.*:\s*(B\.11|C\.)", text, re.IGNORECASE):
             b10_raw = "-"
@@ -109,7 +109,6 @@ def extract_data_from_pdf(file):
         data["NAMA PEMOTONG"] = extract_safe(text, r"C\.3.*?:\s*(.+)")
         data["TANGGAL PEMOTONGAN"] = extract_safe(text, r"C\.4 TANGGAL\s*:\s*(\d{1,2} .+ \d{4})")
         data["NAMA PENANDATANGAN"] = extract_safe(text, r"C\.5 NAMA PENANDATANGAN\s*:\s*(.+)")
-
         return data
 
     except Exception as e:
@@ -142,7 +141,6 @@ if uploaded_files:
         output = BytesIO()
         df.to_excel(output, index=False)
         output.seek(0)
-
         st.download_button(
             "⬇️ Unduh Excel",
             output,
