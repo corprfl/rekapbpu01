@@ -10,6 +10,9 @@ from io import BytesIO
 st.set_page_config(page_title="Rekap Bukti Potong PPh dari PDF ke Excel", layout="wide")
 st.title("📄 Rekap Bukti Potong PPh dari PDF ke Excel")
 
+# Signature
+st.markdown("**By: Reza Fahlevi Lubis @zavibis**")
+
 # =====================================
 # 📝 DESKRIPSI SINGKAT
 # =====================================
@@ -57,7 +60,6 @@ def extract_safe(text, pattern, group=1, default=""):
 # 💡 Ekstraksi DPP, Tarif, dan PPh
 # =====================================
 def smart_extract_dpp_tarif_pph(text):
-    """Ekstrak nilai DPP, tarif (%), dan PPh"""
     for line in text.splitlines():
         if re.search(r"\b\d{2}-\d{3}-\d{2}\b", line):
             numbers = re.findall(r"\d[\d.,]*", line)
@@ -96,9 +98,7 @@ def extract_data_from_pdf(file):
     try:
         data = {}
 
-        # =========================
-        # FIX STATUS BUKTI ✓
-        # =========================
+        # STATUS BUKTI (FIX)
         data["STATUS BUKTI"] = extract_safe(
             text,
             r"(NORMAL|DIBATALKAN|PEMBETULAN(?: KE-?\d+)?)",
@@ -178,6 +178,7 @@ if uploaded_files:
         output = BytesIO()
         df.to_excel(output, index=False)
         output.seek(0)
+
         st.download_button(
             "⬇️ Unduh Excel",
             output,
